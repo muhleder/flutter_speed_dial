@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'animated_child.dart';
 import 'global_key_extension.dart';
 import 'animated_floating_button.dart';
-import 'background_overlay.dart';
 import 'speed_dial_child.dart';
 import 'speed_dial_direction.dart';
 
@@ -224,17 +223,15 @@ class SpeedDial extends StatefulWidget {
   State createState() => _SpeedDialState();
 }
 
-class _SpeedDialState extends State<SpeedDial>
-    with SingleTickerProviderStateMixin {
+class _SpeedDialState extends State<SpeedDial> with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     duration: widget.animationDuration,
     vsync: this,
   );
-  bool _open = false;
-  OverlayEntry? overlayEntry;
-  OverlayEntry? backgroundOverlay;
+  bool get _open => route != null;
   final LayerLink _layerLink = LayerLink();
   final dialKey = GlobalKey<State<StatefulWidget>>();
+  DialogRoute? route;
 
   @override
   void initState() {
@@ -248,14 +245,7 @@ class _SpeedDialState extends State<SpeedDial>
 
   @override
   void dispose() {
-    if (overlayEntry != null) {
-      if (overlayEntry!.mounted) overlayEntry!.remove();
-      overlayEntry!.dispose();
-    }
-    if (widget.renderOverlay && backgroundOverlay != null) {
-      if (backgroundOverlay!.mounted) backgroundOverlay!.remove();
-      backgroundOverlay!.dispose();
-    }
+    _closeRoute();
     _controller.dispose();
     widget.openCloseDial?.removeListener(_onOpenCloseDial);
     super.dispose();
@@ -280,11 +270,22 @@ class _SpeedDialState extends State<SpeedDial>
   }
 
   void _onOpenCloseDial() {
-    final show = widget.openCloseDial?.value;
+    ValueNotifier<bool>? openCloseDial = widget.openCloseDial;
+    if (openCloseDial == null) return;
+    final show = openCloseDial.value;
+    if (!show) _closeRoute();
     if (!mounted) return;
     if (_open != show) {
       _toggleChildren();
     }
+  }
+
+  void _closeRoute([_]) {
+    _controller.reverse();
+    DialogRoute? _route = route;
+    if (_route != null) Navigator.of(context, rootNavigator: true).removeRoute(_route);
+    widget.openCloseDial?.value = false;
+    route = null;
   }
 
   void _toggleChildren() async {
@@ -309,62 +310,42 @@ class _SpeedDialState extends State<SpeedDial>
 
   toggleOverlay() {
     if (_open) {
-      _controller.reverse().whenComplete(() {
-        overlayEntry?.remove();
-        if (widget.renderOverlay &&
-            backgroundOverlay != null &&
-            backgroundOverlay!.mounted) {
-          backgroundOverlay?.remove();
-        }
-      });
+      _closeRoute();
     } else {
-      if (_controller.isAnimating) {
-        // overlayEntry?.remove();
-        // backgroundOverlay?.remove();
-        return;
-      }
-      overlayEntry = OverlayEntry(
-        builder: (ctx) => _ChildrensOverlay(
-          widget: widget,
-          dialKey: dialKey,
-          layerLink: _layerLink,
-          controller: _controller,
-          toggleChildren: _toggleChildren,
-          animationCurve: widget.animationCurve,
-        ),
-      );
-      if (widget.renderOverlay) {
-        backgroundOverlay = OverlayEntry(
-          builder: (ctx) {
-            bool dark = Theme.of(ctx).brightness == Brightness.dark;
-            return BackgroundOverlay(
-              dialKey: dialKey,
-              layerLink: _layerLink,
-              closeManually: widget.closeManually,
-              tooltip: widget.tooltip,
-              shape: widget.shape,
-              onTap: _toggleChildren,
-              // (_open && !widget.closeManually) ? _toggleChildren : null,
-              animation: _controller,
-              color: widget.overlayColor ??
-                  (dark ? Colors.grey[900] : Colors.white)!,
-              opacity: widget.overlayOpacity,
-            );
-          },
-        );
-      }
+      if (_controller.isAnimating) return;
+      builder(BuildContext ctx) => _ChildrensOverlay(
+            widget: widget,
+            dialKey: dialKey,
+            layerLink: _layerLink,
+            controller: _controller,
+            toggleChildren: _toggleChildren,
+            animationCurve: widget.animationCurve,
+          );
 
       if (!mounted) return;
 
       _controller.forward();
-      if (widget.renderOverlay) Overlay.of(context)!.insert(backgroundOverlay!);
-      Overlay.of(context)!.insert(overlayEntry!);
+      DialogRoute _route;
+      if (widget.renderOverlay) {
+        bool _dark = Theme.of(context).brightness == Brightness.dark;
+        _route = DialogRoute(
+          context: context,
+          builder: builder,
+          barrierLabel: widget.tooltip,
+          barrierColor: (widget.overlayColor ?? ((_dark ? Colors.grey.shade900 : Colors.white))).withOpacity(widget.overlayOpacity),
+        );
+      } else {
+        _route = DialogRoute(context: context, builder: builder, barrierDismissible: false, barrierColor: Colors.transparent);
+      }
+      Navigator.of(context, rootNavigator: true).push(_route).then((_) {
+        widget.openCloseDial?.value = false;
+        route = null;
+      });
+      route = _route;
     }
 
     if (!mounted) return;
-    setState(() {
-      _open = !_open;
-    });
+    setState(() {});
   }
 
   Widget _renderButton() {
