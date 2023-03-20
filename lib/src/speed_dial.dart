@@ -263,10 +263,7 @@ class _SpeedDialState extends State<SpeedDial> with SingleTickerProviderStateMix
   }
 
   void _checkChildren() {
-    if (widget.children.length > 5) {
-      debugPrint(
-          'Warning ! You are using more than 5 children, which is not compliant with Material design specs.');
-    }
+    // Noop
   }
 
   void _onOpenCloseDial() {
